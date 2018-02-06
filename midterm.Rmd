@@ -1,0 +1,426 @@
+---
+title: "Midterm B"
+author: "Yijun Fu"
+date: "2/2/2018"
+output:
+  word_document: default
+  html_document: default
+---
+data=c(rnorm(100), rep(NA,5))
+The 90 percentile of data is estimated by quantile(data, 0.9, na.rm=TRUE) in R. We want to find the standard error of estimated 90 percentile and 95 % confidence interval for the true 90 percentile of the population using bootstrap.
+a)  Write an R function that calculates the 90 percentile of data to be used in boot function in b).
+b)  Using boot function, find the standard error and 95% CI for data. Bootstrap size should be 1000.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+
+```{r cars}
+library(boot)
+data=c(rnorm(100), rep(NA,5))
+boot.fn = function(data,index){
+  return(quantile(data[index],0.9,na.rm=TRUE))
+}
+set.seed(1)
+percentile90 = quantile(data,0.9,na.rm=TRUE)
+bt = boot(data,boot.fn,1000)
+se = sd(bt$t)
+ci = c(bt$t0-1.96*se, bt$t0+1.96*se)
+ci
+
+```
+
+library(ISLR)
+data(College)
+College data is statistics for a large number of US Colleges from the 1995 issue of US News and World Report. The data contains 777 observations on the 18 variables. The variable Grad.Rate is the graduation rate of each college. We want to build a prediction model for Grad.Rate from the data.
+1)	Partition the College data to 70% training set and 30% test set. Use set.seed(1)
+2)	From the linear model with all the variables in, find the best subset model for Grad.Rate for the training data using stepAIC. (may have to use glm function instead of lm).
+3)	What are the selected important variables?
+4)	Find the predicted Grad.Rate for the two models, the best stepAIC model and the model with all the variables-in,  for the test data? Find and compare the test data R^2 value for the two models. Which one do you prefer?
+
+
+```{r pressure, echo=FALSE}
+#1)
+library(ISLR)
+library(MASS)
+data(College)
+set.seed(1)
+training.index<-sample(1:nrow(College),size = round(0.7*nrow(College)))
+training<-College[training.index,]
+test<-College[-training.index,]
+
+
+#2)
+model1<-glm(Grad.Rate~.,training,family = gaussian)
+model2<-stepAIC(model1,scope=list(upper= ~.,lower=~1), trace = FALSE, direction = c("both", "backward", "forward"))
+
+
+#3) 
+#the selected variables are Apps + Top10perc + Top25perc + P.Undergrad + Outstate + 
+# Room.Board + Personal + perc.alumni + Expend
+model2$anova
+
+
+#4)
+#the AIC model gave us R2 of 0.45 the original model gave us 0.46. Although the full model has little bit higher r2 but that is because it includes more variables. I prefer reduced model because it is easier to compute and has less variables.
+predict1<-predict(model1,newdata = test)
+y.test<-test$Grad.Rate
+mse=mean((predict1-y.test)^2);mse
+r2=1-sum((predict1-y.test)^2)/sum((y.test-mean(y.test))^2);r2
+predict2<-predict(model2,newdata = test)
+mse=mean((predict2-y.test)^2);mse
+r2=1-sum((predict2-y.test)^2)/sum((y.test-mean(y.test))^2);r2
+```
+```{r}
+
+```
+Classification
+Read the train.csv and test.csv data into R.
+Read two txt files and learn about the data.
+V58 is the response variable (spam mail or regular email). 
+
+1.	Find the logistic regression with all the variables in and find 10-fold cross-validated error on training data.
+2.	Find the best logistic regression model using stepAIC on training data. Which variables are selected and what are the corresponding words or characters? (read two text files to find out). What words give increasing probability of spam mail? 
+3.	What is the 10-fold cross-validated error for the stepAIC model on training data? 
+4.	Apply the above models to the test data and get the prediction confusion matrix and prediction error rates.  
+
+5.	Compare two models in error rates. Which model do you prefer? 
+
+6.	Find the best K on knn model using cv.knn on training data. (try K=1:200) 
+
+7.	What is the 10-fold cross-validated error rate for the knn for the best k on training data.
+
+8.	Apply best knn model (best k selected from the training data) to the test data and get the error rate for the test data.
+
+9.	Build the LDA and QDA model and find 10-fold cross-validate error rates on training data.
+
+10.	Apply the LDA and QDA models above to the test data. What are the error rates?
+
+11.	Among the five models (glm with all variables in, stepAICglm, knn, lda, qda) which one do you prefer based on training data? (Must compare cross-validated errors on training data)
+
+12.	Among the five models (glm with all variables in, stepAICglm, knn, lda, qda) which one do you prefer based on predictions on test data? (Must use training data for training and apply them to the test data.) 
+```{r}
+EnsurePackage<-function(x)
+{ # EnsurePackage(x) - Installs and loads a package
+  # if necessary
+  x <- as.character(x)
+  if (!require(x, character.only=TRUE))
+  {
+    install.packages(pkgs=x,
+                     repos="http://cran.r-project.org")
+  }
+  require(x, character.only=TRUE)
+  
+}
+
+#Installs and loads all packages necessary
+
+PrepareExam<-function(){
+  
+  EnsurePackage("glmnet")
+  EnsurePackage("boot")
+  EnsurePackage("MASS")
+  EnsurePackage("ISLR")
+  EnsurePackage("class")
+  EnsurePackage("ElemStatLearn")
+  EnsurePackage("pls")
+
+}
+
+PrepareExam()
+wd<-getwd();
+test<-paste(wd,"test.csv",sep="/");train<-paste(wd,"train.csv",sep="/")
+test<-read.csv(test,header = T);train<-read.csv(train,header = T)
+
+
+#1) logistic regression has error rate of 0.076
+CV.logistic<-
+  function (data, glmfit, yname, K, seed=321) {
+    
+    n <- nrow(data)
+    set.seed(seed)
+    datay=data[,yname] #response variable
+    library(MASS)
+    #partition the data into K subsets
+    f <- ceiling(n/K)
+    s <- sample(rep(1:K, f), n)  
+    #generate indices 1:10 and sample n of them  
+    # K fold cross-validated error
+    
+    CV=NULL
+    
+    for (i in 1:K) { #i=1
+      j.out <- seq_len(n)[(s == i)] #test data
+      j.in <- seq_len(n)[(s != i)] #training data
+      
+      #model with training data
+      log.fit=glm(glmfit$call, data=data[j.in,],family = 'binomial')
+      #observed test set y
+      testy <- datay[j.out]
+      #predicted test set y
+      log.predy=predict(log.fit, data[j.out,],type='response')
+      
+      tname=rownames(contrasts(datay))
+      class = rep(tname[1], nrow(data[j.out,]))
+      class[log.predy > 0.5] = tname[2]
+      
+      #observed - predicted on test data
+      error= mean(testy!=class)
+      #error rates 
+      CV=c(CV,mean(error))
+    }
+    
+    #Output
+    list(call = glmfit$call, K = K, error=mean(CV),
+         log_error_rate = paste(100*mean(CV), "%"), seed = seed)  
+    
+  }
+
+glmfit1=glm(V58~., data=train, family=binomial)
+er_log=CV.logistic(data=train,glmfit=glmfit1, yname="V58", K=10, seed=123)
+er_log$error
+
+
+#2)
+#with stepAIC, we have below words and characters selected #selected:make,address,3d,our,over,remove,internet,order,report,addresses,free,business,you,credit,your#,000,money,hp,hpl,george,650,lab,data,85 #technology,parts,pm,direct,cs,meeting,original,project,re,edu,conference,;,!,$,#
+#The capital_run_length_average, continuous.capital_run_length_longest, #continuous.capital_run_length_total are also improtant variables.
+#Among all of thoses, variables that increase the probabilities are #3d,our,over,remove,internet,order,report,addresses,free,business,you,credit,your,000,money,650  #technology,!,$,#,capital_run_length_average, continuous.capital_run_length_longest, #continuous.capital_run_length_total
+glmfit2<-stepAIC(glmfit1,direction =c("both","backward", "forward"),trace = F)
+glmfit2$anova;summary(glmfit2,cor=F)$coef
+
+
+#3)
+#The error rate for logistic rgression with step AIC is 0.077
+mycv.stepAIC.logistic<-
+  function (data, glmfit, K=10, seed=123) {
+    #logistic regression
+    #this function is to get the Cross-validated mean square error for regression
+    #output R2 and MSE
+    library(MASS)
+    n <- nrow(data)
+    set.seed(seed) #K=10
+    
+    #partition the data into K subsets
+    f <- ceiling(n/K)
+    s <- sample(rep(1:K, f), n)  
+    
+    #generate indices 1:10 and sample n of them  
+    # K fold cross-validated mean squared error
+    
+    CV=NULL; O.P=NULL
+    
+    for (i in 1:K) { #i=1
+      test.index <- seq_len(n)[(s == i)] #test data
+      train.index <- seq_len(n)[(s != i)] #training data
+      
+      #model with training data
+      glm.fit <- glm(glmfit$call, data = data[train.index,], family=binomial)
+      glm.fit1 <- stepAIC(glm.fit, trace = F)
+      #observed test set y
+      test.y <- glmfit$y[test.index]
+      
+      #predicted probability for test data
+      pred.y <- predict(glm.fit1, newdata=data[test.index,],type="response")
+      
+      #change prediction probability to class prediction
+      tname=names(table(glmfit$y))
+      ypred=ifelse(pred.y>.5,tname[2],tname[1])
+      
+      #
+      error=mean(ypred!=test.y) #classification error 
+      ovsp <- cbind(pred=ypred,obs=test.y) #pred vs obs vector
+      
+      
+      CV <- c(CV,error) 
+      O.P <- rbind(O.P,ovsp)
+    }
+    
+    #Output
+    list(call = glmfit$call, K = K, 
+         error = mean(CV), ConfusianMatrix=table(O.P[,1],O.P[,2]), 
+         seed = seed)  
+    
+  }
+er_log1=mycv.stepAIC.logistic(data=train,glmfit=glmfit1, K=10, seed=123)
+er_log1$error
+
+
+#4)
+#The error rate for full model is 0.075. For the stepwise model it is 0.074.
+predict1<-predict(glmfit1,newdata=test,type = "response")
+predict1<-ifelse(predict1>0.5,"spam","email")
+table(predict1,test$V58)
+mean(predict1!=test$V58)
+predict2<-predict(glmfit2,newdata = test,type = "response")
+predict2<-ifelse(predict2>0.5,"spam","email")
+table(predict2,test$V58)
+mean(predict2!=test$V58)
+
+
+#5)
+#I prefer stepwise model, although the error rate is really close, the reduced one has less variables so it is easier to interpret and compute.
+
+
+#6)
+#when k = 1 the error rate is smallest.
+cv.knn <- function(dataY, dataX, kn=3, K=10, seed=123) { #we are trying to figure out the best k # of k. K is how many folds
+ n <- nrow(dataX)
+ set.seed(123) 
+ library(class)
+
+ f <- ceiling(n/K)
+ s <- sample(rep(1:K, f), n)
+ dataX=scale(dataX)
+ CV=NULL;PvsO=NULL
+
+ for (i in 1:K){
+   test.index <- seq_len(n)[(s==i)] #test data
+   train.index <- seq_len(n)[(s != i)]
+   train.x <- dataX[train.index,]
+   test.x<- dataX[test.index,]
+   train.y <- dataY[train.index]
+   test.y<- dataY[test.index]
+
+   #predicted test set y
+   knn.pred=knn(train.x, test.x, train.y, k=kn)
+   #observed - predicted on test data
+   error=mean(knn.pred!=test.y)
+   #error rates
+   CV=c(CV,mean(error))
+   predvsobs=data.frame(knn.pred,test.y)
+   PvsO =rbind(PvsO, predvsobs)
+
+   }
+
+#output
+list(k = K, error_rate = mean(CV), confusion=table(PvsO[,1],PvsO[,2]), seed=seed)
+}
+kerror=NULL
+for(i in 1:200){
+ kp=cv.knn(dataY = train$V58, dataX = train[,-58], kn=i, K=10, seed = 123)
+ kerror[i]=kp$error_rate #vector
+}
+
+
+#7)the min error rate on training set is 0.092. 
+#corresponds to the lowest min error rate.
+K=which(kerror == min(kerror))
+#best k for knn
+K 
+print(min(kerror))
+
+
+#8)the error rate for knn on test data is 0.115.
+ kp2=cv.knn(dataY = test$V58, dataX = test[,-58], kn=1, K=10, seed = 123)
+ kerror=kp2$error_rate
+print(min(kerror))
+
+
+#9)the error rate for lda on training set is 0.104.for qda is 0.158.
+cv.lda<-
+  function (data, model=V58~., yname="V58", K=10, seed=123) {
+    #model is lda model
+    #yname: name of response variable
+    #K: number of partition for cv #K=10
+    #seed: random seed number
+    
+    n <- nrow(data)
+    set.seed(seed)
+    datay=data[,yname] #response variable
+    #partition the data into K subsets
+    f <- ceiling(n/K)
+    s <- sample(rep(1:K, f), n)  
+    #generate indices 1:10 and sample n of them  
+    # K fold cross-validated error
+    
+    CV=NULL
+    
+    for (i in 1:K) { #i=1
+      test.index <- seq_len(n)[(s == i)] #test data
+      train.index <- seq_len(n)[(s != i)] #training data
+      
+      #model with training data
+      lda.fit=lda(model, data=data[train.index,])
+      #observed test set y
+      lda.y <- data[test.index, yname]
+      #predicted test set y
+      lda.predy=predict(lda.fit, data[test.index,])$class
+      
+      #observed - predicted on test data
+      error= mean(lda.y!=lda.predy)
+      #error rates 
+      CV=c(CV,error)
+    }
+    
+    #Output
+    list(call = model, K = K, 
+         error = mean(CV), seed = seed)  
+    
+  }
+er_lda=cv.lda(data=train,model=V58~., yname="V58", K=10, seed=123)
+er_lda$error
+
+
+cv.qda<-
+  function (data, model=V58~., yname="V58", K=10, seed=123) {
+    #model is qda model
+    #yname: name of response variable
+    #K: number of partition for cv #K=10
+    #seed: random seed number
+    
+    n <- nrow(data)
+    set.seed(seed)
+    datay=data[,yname] #response variable
+    library(MASS)
+    #partition the data into K subsets
+    f <- ceiling(n/K)
+    s <- sample(rep(1:K, f), n)  
+    #generate indices 1:10 and sample n of them  
+    # K fold cross-validated error
+   
+    CV=NULL
+    
+    for (i in 1:K) { #i=1
+      test.index <- seq_len(n)[(s == i)] #test data
+      train.index <- seq_len(n)[(s != i)] #training data
+      
+      #model with training data
+      qda.fit=qda(model, data=data[train.index,])
+      #observed test set y
+      qda.y <- data[test.index, yname]
+      #predicted test set y
+      qda.predy=predict(qda.fit, data[test.index,])$class
+      
+      #observed - predicted on test data
+      error= mean(qda.y!=qda.predy)
+      #error rates 
+      CV=c(CV,error)
+    }
+    
+    #Output
+    list(call = model, K = K, 
+         error = mean(CV), seed = seed)  
+    
+  }
+
+er_qda=cv.qda(data=train,model=V58~.-V32-V41-V31, yname="V58", K=10, seed=123)
+er_qda$error
+
+
+#10 The error rate for LDA on test data is 0.109. For QDA is 0.158 
+er_lda1=cv.lda(data=test,model=V58~., yname="V58", K=10, seed=123)
+er_lda1$error
+er_qda1=cv.qda(data=test,model=V58~.-V32-V41-V31, yname="V58", K=10, seed=123)
+er_qda1$error
+
+
+#11 Our classifications are well seperated, so although logistic regression has the smallest erro rate, I think the coefficient is unstable so I prefer KNN, which has the second smallest error rate 0.902.
+
+
+#12 For the same reason, I rule out the logistic and choose LDA because the smallest error rate among all the pausible ones.
+```
+
